@@ -17,6 +17,8 @@ In search.py, you will implement generic search algorithms which are called by
 Pacman agents (in searchAgents.py).
 """
 
+from typing import List
+from search.game import Directions
 import util
 
 class SearchProblem:
@@ -88,8 +90,40 @@ def depthFirstSearch(problem):
     """
     "*** YOUR CODE HERE ***"
    
+    sucessor_ds = util.Stack()
+    actions = util.Stack()
     
+    visited = util.Counter()
     
+    sucessor_ds.push((problem.getStartState(), Directions.SOUTH, 0))
+    while (not util.Stack.isEmpty(sucessor_ds)):
+        current_triple = sucessor_ds.pop()
+        
+        if (problem.isGoalState(current_triple[0])):
+            return actions
+        elif visited[current_triple[0]] > 0:
+            continue
+        
+        visited[current_triple[0]] = 1 # only add the node to set
+        actions.push(current_triple)
+        
+        number_sucessors = 0
+        print(current_triple)
+        sucessors = problem.getSuccessors(current_triple[0])
+        if len(sucessors) == 0:
+            actions.pop()
+            continue
+        
+        for succesor in sucessors:
+            sucessor_ds.push(succesor)
+        
+        pass
+    
+    while (not util.Stack.isEmpty(actions)):
+        pass
+    
+    return []
+        
     """util.raiseNotDefined()"""
 
 def breadthFirstSearch(problem):
