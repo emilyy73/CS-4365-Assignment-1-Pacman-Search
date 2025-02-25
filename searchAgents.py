@@ -336,10 +336,9 @@ class CornersProblem(search.SearchProblem):
                 nextPos = (nextx, nexty)
                 cornersLeftBits = state[1]
                 for corner,index in zip(self.corners, range(4)):
-                    cornerBit = 2**index
-                    isCornerBitOn = (cornersLeftBits & cornerBit) == cornerBit
+                    isCornerBitOn = (cornersLeftBits & (1 << index)) != 0
                     if (nextPos == corner) and isCornerBitOn:
-                        cornersLeftBits = cornersLeftBits - cornerBit # corner found, flip bi
+                        cornersLeftBits = cornersLeftBits - (1 << index) # corner found, flip bi
                 cost = self.costFn(nextPos)
                 successors.append( ( (nextPos, cornersLeftBits), action, cost) )
     
@@ -373,110 +372,59 @@ def cornersHeuristic(state, problem):
     shortest path from the state to a goal of the problem; i.e.  it should be
     admissible (as well as consistent).
     """
-    corners = problem.corners # These are the corner coordinates
-    walls = problem.walls # These are the walls of the maze, as a Grid (game.py)
     "*** YOUR CODE HERE ***"
-    
-    # unpack state information
+    import util
     (pacman_x, pacman_y), cornersLeftBits = state
     corners = problem.corners
     walls   = problem.walls
 
-    # 1) find corners that are still unvisited:
-    unvisited = []
+    unvisitedCorners = []
     for i in range(4):
-        # if bit i in cornersLeftBits is still set, then corner i is unvisited
         if (cornersLeftBits & (1 << i)) != 0:
-            unvisited.append(i)
+            unvisitedCorners.append(corners[i])
 
-    if not unvisited:
+    if not unvisitedCorners:
         return 0
-
-    # 2) build the graph
-    nodes = []
-    nodes.append((-1, (pacman_x, pacman_y))) 
-    for c in unvisited:
-        nodes.append((c, corners[c]))
 
     if 'distCache' not in problem.heuristicInfo:
         problem.heuristicInfo['distCache'] = {}
-    distCache = problem.heuristicInfo['distCache']
+    dstCache = problem.heuristicInfo['distCache']
 
-    # 3) precompute BFS
     def bfsDistance(startPos, goalPos):
         if startPos == goalPos:
             return 0
-        
-        if (startPos, goalPos) in distCache:
-            return distCache[(startPos, goalPos)]
-        if (goalPos, startPos) in distCache:
-            return distCache[(goalPos, startPos)]
-        
-        queue = util.Queue()
-        queue.push((startPos, 0))
+        if (startPos, goalPos) in dstCache:
+            return dstCache[(startPos, goalPos)]
+        if (goalPos, startPos) in dstCache:
+            return dstCache[(goalPos, startPos)]
+
+        toSearch = util.Queue()
+        toSearch.push((startPos, 0))
         visited = set([startPos])
-        while not queue.isEmpty():
-            (curX, curY), dist = queue.pop()
-            # explore neighbors
+        while not toSearch.isEmpty():
+            (curX, curY), dst = toSearch.pop()
+            if (curX, curY) == goalPos:
+                dstCache[(startPos, goalPos)] = dst
+                dstCache[(goalPos, startPos)] = dst
+                return dst
             for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
-                nx, ny = curX + dx, curY + dy
-                if walls[nx][ny]:
-                    continue 
-                if (nx, ny) not in visited:
-                    if (nx, ny) == goalPos:
-                        distCache[(startPos, goalPos)] = dist + 1
-                        distCache[(goalPos, startPos)] = dist + 1
-                        return dist + 1
-                    visited.add((nx, ny))
-                    queue.push(((nx, ny), dist + 1))
-        distCache[(startPos, goalPos)] = 999999
-        distCache[(goalPos, startPos)] = 999999
+                nextx, nexty = int(curX + dx), int(curY + dy)
+                if not walls[nextx][nexty] and (nextx, nexty) not in visited:
+                    visited.add((nextx, nexty))
+                    toSearch.push(((nextx, nexty), dst + 1))
+
+        dstCache[(startPos, goalPos)] = 999999
+        dstCache[(goalPos, startPos)] = 999999
         return 999999
 
-    edges = []
-    n = len(nodes)
-    # compute BFS distance for each pair
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = bfsDistance(nodes[i][1], nodes[j][1])
-            edges.append((dist, i, j))
+    pacmanPos = (pacman_x, pacman_y)
+    maxDst = 0
+    for cornerPos in unvisitedCorners:
+        dst = bfsDistance(pacmanPos, cornerPos)
+        if dst > maxDst:
+            maxDst = dst
 
-    # 4) kruskal's algorithm
-    parent = list(range(n))
-    rank   = [0] * n
-
-    def find(u):
-        if parent[u] != u:
-            parent[u] = find(parent[u])
-        return parent[u]
-
-    def union(u, v):
-        rootU = find(u)
-        rootV = find(v)
-        if rootU == rootV:
-            return False
-  
-        if rank[rootU] < rank[rootV]:
-            parent[rootU] = rootV
-        elif rank[rootU] > rank[rootV]:
-            parent[rootV] = rootU
-        else:
-            parent[rootV] = rootU
-            rank[rootU] += 1
-        return True
-
-    edges.sort(key=lambda x: x[0])
-
-    mst_cost = 0
-    sets_count = n
-    for dist, u, v in edges:
-        if union(u, v):
-            mst_cost += dist
-            sets_count -= 1
-            if sets_count == 1:
-                break
-
-    return mst_cost
+    return maxDst
 
 class AStarCornersAgent(SearchAgent):
     "A SearchAgent for FoodSearchProblem using A* and your foodHeuristic"
@@ -572,106 +520,53 @@ def foodHeuristic(state, problem):
     position, foodGrid = state
     "*** YOUR CODE HERE ***"
 
-    # state information
+    import util
     (pacman_x, pacman_y), foodGrid = state
     walls = problem.walls
 
     foodList = foodGrid.asList()
     if not foodList:
         return 0
-    
+
     if 'distCache' not in problem.heuristicInfo:
         problem.heuristicInfo['distCache'] = {}
-    distCache = problem.heuristicInfo['distCache']
+    dstCache = problem.heuristicInfo['distCache']
 
-    # 1) build nodes
-    nodes = []
-    nodes.append((-1, (pacman_x, pacman_y)))  # (logicalID, (x, y))
-    for i, foodPos in enumerate(foodList):
-        nodes.append((i, foodPos))
-
-    # 2) BFS function with caching
     def bfsDistance(startPos, goalPos):
-        # check the cache first
-        if (startPos, goalPos) in distCache:
-            return distCache[(startPos, goalPos)]
-        if (goalPos, startPos) in distCache:
-            return distCache[(goalPos, startPos)]
-
-        # if positions are the same, distance is 0
         if startPos == goalPos:
-            distCache[(startPos, goalPos)] = 0
-            distCache[(goalPos, startPos)] = 0
             return 0
+        if (startPos, goalPos) in dstCache:
+            return dstCache[(startPos, goalPos)]
+        if (goalPos, startPos) in dstCache:
+            return dstCache[(goalPos, startPos)]
 
-        # standard BFS on the maze
-        queue = util.Queue()
-        queue.push((startPos, 0))  # (position, distanceSoFar)
+        toSearch = util.Queue()
+        toSearch.push((startPos, 0))
         visited = set([startPos])
-        while not queue.isEmpty():
-            (curX, curY), dist = queue.pop()
-            # explore neighbors
+        while not toSearch.isEmpty():
+            (curX, curY), dst = toSearch.pop()
+            if (curX, curY) == goalPos:
+                dstCache[(startPos, goalPos)] = dst
+                dstCache[(goalPos, startPos)] = dst
+                return dst
             for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
-                nx, ny = curX + dx, curY + dy
-                if walls[nx][ny]:
-                    continue  # can't go through walls
-                if (nx, ny) not in visited:
-                    if (nx, ny) == goalPos:
-                        distCache[(startPos, goalPos)] = dist + 1
-                        distCache[(goalPos, startPos)] = dist + 1
-                        return dist + 1
-                    visited.add((nx, ny))
-                    queue.push(((nx, ny), dist + 1))
+                nextx, nexty = int(curX + dx), int(curY + dy)
+                if not walls[nextx][nexty] and (nextx, nexty) not in visited:
+                    visited.add((nextx, nexty))
+                    toSearch.push(((nextx, nexty), dst + 1))
 
-        # unreachable
-        distCache[(startPos, goalPos)] = 999999
-        distCache[(goalPos, startPos)] = 999999
+        dstCache[(startPos, goalPos)] = 999999
+        dstCache[(goalPos, startPos)] = 999999
         return 999999
 
-    # 3) build edges using BFS distances
-    edges = []
-    n = len(nodes)
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = bfsDistance(nodes[i][1], nodes[j][1])
-            edges.append((dist, i, j))
+    pacmanPos = (pacman_x, pacman_y)
+    maxDst = 0
+    for foodPos in foodList:
+        dst = bfsDistance(pacmanPos, foodPos)
+        if dst > maxDst:
+            maxDst = dst
 
-    # 4) kruskal's algorithm
-    parent = list(range(n))
-    rank   = [0] * n
-
-    def find(u):
-        if parent[u] != u:
-            parent[u] = find(parent[u])
-        return parent[u]
-
-    def union(u, v):
-        rootU = find(u)
-        rootV = find(v)
-        if rootU == rootV:
-            return False
-        
-        if rank[rootU] < rank[rootV]:
-            parent[rootU] = rootV
-        elif rank[rootU] > rank[rootV]:
-            parent[rootV] = rootU
-        else:
-            parent[rootV] = rootU
-            rank[rootU] += 1
-        return True
-
-    edges.sort(key=lambda x: x[0])
-
-    mst_cost = 0
-    sets_count = n
-    for dist, u, v in edges:
-        if union(u, v):
-            mst_cost += dist
-            sets_count -= 1
-            if sets_count == 1:
-                break
-
-    return mst_cost
+    return maxDst
 
 
 class ClosestDotSearchAgent(SearchAgent):
