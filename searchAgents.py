@@ -288,6 +288,10 @@ class CornersProblem(search.SearchProblem):
         # Please add any code here which you would like to use
         # in initializing the problem
         "*** YOUR CODE HERE ***"
+        self.cornersLeftBits = 15
+        self.currentPosition = self.startingPosition
+        self.costFn = lambda action: 1
+        self.heuristicInfo = {}
 
     def getStartState(self):
         """
@@ -295,14 +299,14 @@ class CornersProblem(search.SearchProblem):
         space)
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return (self.startingPosition, self.cornersLeftBits)
 
     def isGoalState(self, state):
         """
         Returns whether this search state is a goal state of the problem.
         """
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return state[1] == 0
 
     def getSuccessors(self, state):
         """
@@ -323,9 +327,22 @@ class CornersProblem(search.SearchProblem):
             #   dx, dy = Actions.directionToVector(action)
             #   nextx, nexty = int(x + dx), int(y + dy)
             #   hitsWall = self.walls[nextx][nexty]
-
             "*** YOUR CODE HERE ***"
-
+            
+            x,y = state[0]
+            dx, dy = Actions.directionToVector(action)
+            nextx, nexty = int(x + dx), int(y + dy)
+            if not self.walls[nextx][nexty]:
+                nextPos = (nextx, nexty)
+                cornersLeftBits = state[1]
+                for corner,index in zip(self.corners, range(4)):
+                    cornerBit = 2**index
+                    isCornerBitOn = (cornersLeftBits & cornerBit) == cornerBit
+                    if (nextPos == corner) and isCornerBitOn:
+                        cornersLeftBits = cornersLeftBits - cornerBit # corner found, flip bi
+                cost = self.costFn(nextPos)
+                successors.append( ( (nextPos, cornersLeftBits), action, cost) )
+    
         self._expanded += 1 # DO NOT CHANGE
         return successors
 
@@ -358,9 +375,108 @@ def cornersHeuristic(state, problem):
     """
     corners = problem.corners # These are the corner coordinates
     walls = problem.walls # These are the walls of the maze, as a Grid (game.py)
-
     "*** YOUR CODE HERE ***"
-    return 0 # Default to trivial solution
+    
+    # unpack state information
+    (pacman_x, pacman_y), cornersLeftBits = state
+    corners = problem.corners
+    walls   = problem.walls
+
+    # 1) find corners that are still unvisited:
+    unvisited = []
+    for i in range(4):
+        # if bit i in cornersLeftBits is still set, then corner i is unvisited
+        if (cornersLeftBits & (1 << i)) != 0:
+            unvisited.append(i)
+
+    if not unvisited:
+        return 0
+
+    # 2) build the graph
+    nodes = []
+    nodes.append((-1, (pacman_x, pacman_y))) 
+    for c in unvisited:
+        nodes.append((c, corners[c]))
+
+    if 'distCache' not in problem.heuristicInfo:
+        problem.heuristicInfo['distCache'] = {}
+    distCache = problem.heuristicInfo['distCache']
+
+    # 3) precompute BFS
+    def bfsDistance(startPos, goalPos):
+        if startPos == goalPos:
+            return 0
+        
+        if (startPos, goalPos) in distCache:
+            return distCache[(startPos, goalPos)]
+        if (goalPos, startPos) in distCache:
+            return distCache[(goalPos, startPos)]
+        
+        queue = util.Queue()
+        queue.push((startPos, 0))
+        visited = set([startPos])
+        while not queue.isEmpty():
+            (curX, curY), dist = queue.pop()
+            # explore neighbors
+            for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
+                nx, ny = curX + dx, curY + dy
+                if walls[nx][ny]:
+                    continue 
+                if (nx, ny) not in visited:
+                    if (nx, ny) == goalPos:
+                        distCache[(startPos, goalPos)] = dist + 1
+                        distCache[(goalPos, startPos)] = dist + 1
+                        return dist + 1
+                    visited.add((nx, ny))
+                    queue.push(((nx, ny), dist + 1))
+        distCache[(startPos, goalPos)] = 999999
+        distCache[(goalPos, startPos)] = 999999
+        return 999999
+
+    edges = []
+    n = len(nodes)
+    # compute BFS distance for each pair
+    for i in range(n):
+        for j in range(i + 1, n):
+            dist = bfsDistance(nodes[i][1], nodes[j][1])
+            edges.append((dist, i, j))
+
+    # 4) kruskal's algorithm
+    parent = list(range(n))
+    rank   = [0] * n
+
+    def find(u):
+        if parent[u] != u:
+            parent[u] = find(parent[u])
+        return parent[u]
+
+    def union(u, v):
+        rootU = find(u)
+        rootV = find(v)
+        if rootU == rootV:
+            return False
+  
+        if rank[rootU] < rank[rootV]:
+            parent[rootU] = rootV
+        elif rank[rootU] > rank[rootV]:
+            parent[rootV] = rootU
+        else:
+            parent[rootV] = rootU
+            rank[rootU] += 1
+        return True
+
+    edges.sort(key=lambda x: x[0])
+
+    mst_cost = 0
+    sets_count = n
+    for dist, u, v in edges:
+        if union(u, v):
+            mst_cost += dist
+            sets_count -= 1
+            if sets_count == 1:
+                break
+
+    return mst_cost
 
 class AStarCornersAgent(SearchAgent):
     "A SearchAgent for FoodSearchProblem using A* and your foodHeuristic"
@@ -382,7 +498,8 @@ class FoodSearchProblem:
         self.walls = startingGameState.getWalls()
         self.startingGameState = startingGameState
         self._expanded = 0 # DO NOT CHANGE
-        self.heuristicInfo = {} # A dictionary for the heuristic to store information
+        self.heuristicInfo = {} # A dictionary for the heuristic to store informatio
+        
 
     def getStartState(self):
         return self.start
@@ -454,7 +571,108 @@ def foodHeuristic(state, problem):
     """
     position, foodGrid = state
     "*** YOUR CODE HERE ***"
-    return 0
+
+    # state information
+    (pacman_x, pacman_y), foodGrid = state
+    walls = problem.walls
+
+    foodList = foodGrid.asList()
+    if not foodList:
+        return 0
+    
+    if 'distCache' not in problem.heuristicInfo:
+        problem.heuristicInfo['distCache'] = {}
+    distCache = problem.heuristicInfo['distCache']
+
+    # 1) build nodes
+    nodes = []
+    nodes.append((-1, (pacman_x, pacman_y)))  # (logicalID, (x, y))
+    for i, foodPos in enumerate(foodList):
+        nodes.append((i, foodPos))
+
+    # 2) BFS function with caching
+    def bfsDistance(startPos, goalPos):
+        # check the cache first
+        if (startPos, goalPos) in distCache:
+            return distCache[(startPos, goalPos)]
+        if (goalPos, startPos) in distCache:
+            return distCache[(goalPos, startPos)]
+
+        # if positions are the same, distance is 0
+        if startPos == goalPos:
+            distCache[(startPos, goalPos)] = 0
+            distCache[(goalPos, startPos)] = 0
+            return 0
+
+        # standard BFS on the maze
+        queue = util.Queue()
+        queue.push((startPos, 0))  # (position, distanceSoFar)
+        visited = set([startPos])
+        while not queue.isEmpty():
+            (curX, curY), dist = queue.pop()
+            # explore neighbors
+            for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
+                nx, ny = curX + dx, curY + dy
+                if walls[nx][ny]:
+                    continue  # can't go through walls
+                if (nx, ny) not in visited:
+                    if (nx, ny) == goalPos:
+                        distCache[(startPos, goalPos)] = dist + 1
+                        distCache[(goalPos, startPos)] = dist + 1
+                        return dist + 1
+                    visited.add((nx, ny))
+                    queue.push(((nx, ny), dist + 1))
+
+        # unreachable
+        distCache[(startPos, goalPos)] = 999999
+        distCache[(goalPos, startPos)] = 999999
+        return 999999
+
+    # 3) build edges using BFS distances
+    edges = []
+    n = len(nodes)
+    for i in range(n):
+        for j in range(i + 1, n):
+            dist = bfsDistance(nodes[i][1], nodes[j][1])
+            edges.append((dist, i, j))
+
+    # 4) kruskal's algorithm
+    parent = list(range(n))
+    rank   = [0] * n
+
+    def find(u):
+        if parent[u] != u:
+            parent[u] = find(parent[u])
+        return parent[u]
+
+    def union(u, v):
+        rootU = find(u)
+        rootV = find(v)
+        if rootU == rootV:
+            return False
+        
+        if rank[rootU] < rank[rootV]:
+            parent[rootU] = rootV
+        elif rank[rootU] > rank[rootV]:
+            parent[rootV] = rootU
+        else:
+            parent[rootV] = rootU
+            rank[rootU] += 1
+        return True
+
+    edges.sort(key=lambda x: x[0])
+
+    mst_cost = 0
+    sets_count = n
+    for dist, u, v in edges:
+        if union(u, v):
+            mst_cost += dist
+            sets_count -= 1
+            if sets_count == 1:
+                break
+
+    return mst_cost
+
 
 class ClosestDotSearchAgent(SearchAgent):
     "Search for all food using a sequence of searches"
@@ -485,7 +703,8 @@ class ClosestDotSearchAgent(SearchAgent):
         problem = AnyFoodSearchProblem(gameState)
 
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        problem = AnyFoodSearchProblem(gameState)
+        return search.bfs(problem)
 
 class AnyFoodSearchProblem(PositionSearchProblem):
     """
@@ -521,7 +740,7 @@ class AnyFoodSearchProblem(PositionSearchProblem):
         x,y = state
 
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        return self.food[x][y]
 
 def mazeDistance(point1, point2, gameState):
     """

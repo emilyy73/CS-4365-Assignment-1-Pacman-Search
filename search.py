@@ -17,6 +17,8 @@ In search.py, you will implement generic search algorithms which are called by
 Pacman agents (in searchAgents.py).
 """
 
+from typing import List
+from game import Directions
 import util
 
 class SearchProblem:
@@ -87,20 +89,127 @@ def depthFirstSearch(problem):
     print("Start's successors:", problem.getSuccessors(problem.getStartState()))
     """
     "*** YOUR CODE HERE ***"
-   
+
+    sucessor_ds = util.Stack()
+    parentMap = {problem.getStartState() : ((-1, -1), Directions.EAST, 0)}
+    sucessor_ds.push((problem.getStartState(), Directions.SOUTH, 0))
+
+
+    while (not util.Stack.isEmpty(sucessor_ds)):
+        current_triple = sucessor_ds.pop()
+        
+        # backtrace
+        if (problem.isGoalState(current_triple[0])):
+            end = current_triple
+            actions = []
+            
+            # while we havent backtraced to start
+            while(end[0] != problem.getStartState()):
+                actions.append(end[1])
+                end = parentMap[end[0]]
+            rev = reversed(actions)
+            
+            return list(rev)
+        
+        successors = problem.getSuccessors(current_triple[0])
+        
+        for successor in successors:
+            # if visited must have a parent
+            if successor[0] in parentMap:
+                continue
+                
+            # cost of itself + parent
+            successor = (successor[0], successor[1], successor[2] + current_triple[2])
+            parentMap[successor[0]] = current_triple
+            sucessor_ds.push(successor)
+                        
+        pass
+    
+    return []
     
     
-    """util.raiseNotDefined()"""
 
 def breadthFirstSearch(problem):
     """Search the shallowest nodes in the search tree first."""
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    
+    sucessor_ds = util.Queue()
+    parentMap = {problem.getStartState() : ((-1, -1), Directions.EAST, 0)}
+    sucessor_ds.push((problem.getStartState(), Directions.SOUTH, 0))
+
+
+    while (not util.Queue.isEmpty(sucessor_ds)):
+        current_triple = sucessor_ds.pop()
+        
+        # backtrace
+        if (problem.isGoalState(current_triple[0])):
+            end = current_triple
+            actions = []
+            
+            # while we havent backtraced to start
+            while(end[0] != problem.getStartState()):
+                actions.append(end[1])
+                end = parentMap[end[0]]
+            rev = reversed(actions)
+            
+            return list(rev)
+        
+        successors = problem.getSuccessors(current_triple[0])
+        
+        for successor in successors:
+            # if visited must have a parent
+            if successor[0] in parentMap:
+                continue
+        
+            # cost of itself + parent
+            successor = (successor[0], successor[1], successor[2] + current_triple[2])
+            parentMap[successor[0]] = current_triple
+            sucessor_ds.push(successor)
+                        
+        pass
+    
+    return []
 
 def uniformCostSearch(problem):
     """Search the node of least total cost first."""
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    
+    sucessor_ds = util.PriorityQueue()
+    parentMap = {problem.getStartState() : ((-1, -1), Directions.EAST, 0)}
+    sucessor_ds.push((problem.getStartState(), Directions.SOUTH, 0), 0)
+
+
+    while (not util.PriorityQueue.isEmpty(sucessor_ds)):
+        current_triple = sucessor_ds.pop()
+        
+        # backtrace
+        if (problem.isGoalState(current_triple[0])):
+            end = current_triple
+            actions = []
+            
+            # while we havent backtraced to start
+            while(end[0] != problem.getStartState()):
+                actions.append(end[1])
+                end = parentMap[end[0]]
+            rev = reversed(actions)
+            
+            return list(rev)
+        
+        successors = problem.getSuccessors(current_triple[0])
+        
+        for successor in successors:
+            # if visited must have a parent
+            if successor[0] in parentMap:
+                continue
+            
+            # cost of itself + parent
+            successor = (successor[0], successor[1], successor[2] + current_triple[2])
+            parentMap[successor[0]] = current_triple
+            sucessor_ds.push(successor, successor[2])
+                        
+        pass
+    
+    return []
 
 def nullHeuristic(state, problem=None):
     """
@@ -112,7 +221,43 @@ def nullHeuristic(state, problem=None):
 def aStarSearch(problem, heuristic=nullHeuristic):
     """Search the node that has the lowest combined cost and heuristic first."""
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    
+    sucessor_ds = util.PriorityQueue()
+    parentMap = {problem.getStartState() : ((-1, -1), Directions.EAST, 0)}
+    sucessor_ds.push((problem.getStartState(), Directions.SOUTH, 0), 0)
+
+
+    while (not util.PriorityQueue.isEmpty(sucessor_ds)):
+        current_triple = sucessor_ds.pop()
+        
+        # backtrace
+        if (problem.isGoalState(current_triple[0])):
+            end = current_triple
+            actions = []
+            
+            # while we havent backtraced to start
+            while(end[0] != problem.getStartState()):
+                actions.append(end[1])
+                end = parentMap[end[0]]
+            rev = reversed(actions)
+            
+            return list(rev)
+        
+        successors = problem.getSuccessors(current_triple[0])
+        
+        for successor in successors:
+            # if visited must have a parent
+            if successor[0] in parentMap:
+                continue
+            
+            # cost of itself + parent
+            successor = (successor[0], successor[1], heuristic(successor[0], problem) + current_triple[2])
+            parentMap[successor[0]] = current_triple
+            sucessor_ds.push(successor, successor[2])
+                        
+        pass
+    
+    return []
 
 
 # Abbreviations
